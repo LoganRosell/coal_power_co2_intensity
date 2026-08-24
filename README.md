@@ -28,3 +28,23 @@ This repository analyzes whether coal-fired power generation's CO2 emission inte
 ├── coal_power_co2_intensity_repo.Rproj       # RStudio project configuration
 └── .gitignore
 ```
+
+## Dependencies & Environment Setup
+
+This project uses [`renv`](https://rstudio.github.io/renv/) to manage package dependencies and ensure reproducibility.
+
+### Core R Packages
+
+-   **Data Manipulation & Workflows:** `tidyverse` (includes `dplyr`, `readr`, `tidyr`, `ggplot2`), `here`, `skimr`
+-   **Statistical Modeling & Tests:** `car`, `lawstat`
+-   **Tables & Presentation:** `gt`, `gtsummary`
+-   **Geospatial & Visualization:** `sf`, `rnaturalearth`, `extrafont`
+
+------------------------------------------------------------------------
+
+### Restoring the Environment with `renv`
+
+To install the exact package versions used in this project:
+
+1.  Clone the repository and open `coal_power_co2_intensity_repo.Rproj` in RStudio.
+2.  If `renv` is not installed on your machine, install it via the console: `r install.packages("renv")`
