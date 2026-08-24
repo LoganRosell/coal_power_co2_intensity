@@ -1,0 +1,13 @@
+# History and session files
+.Rhistory
+.RData
+.Ruserdata
+.Rproj.user/
+*.Rapp.history
+
+# macOS system files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes

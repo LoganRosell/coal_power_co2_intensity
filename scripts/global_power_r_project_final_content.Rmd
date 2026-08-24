@@ -1,0 +1,456 @@
+---
+title: "Global Coal Power & Emissions R Project"
+author: "Logan Rosell"
+format: pdf
+editor: visual
+---
+
+```{r}
+
+library(ggplot2)
+library(tidyverse)
+library(skimr)
+library(car)
+library(gtsummary)
+library(gt)
+library(lawstat)
+library(sf)
+library(rnaturalearth)
+library(extrafont)
+library(here)
+
+#font_import() 
+#loadfonts(device = "pdf")
+
+theme_set(theme_classic())
+theme_update(text = element_text(family = "Times New Roman"))
+
+```
+
+Data Source: https://ember-energy.org/data/yearly-electricity-data/
+
+Question: Does coal power's CO2 emission intensity vary across global regions and time between 2000 and 2024?
+
+# Cleaning Data
+
+```{r}
+
+global_power_data <- read_csv(here::here("data", "yearly_full_release_long_format.csv"))
+
+```
+
+```{r}
+global_coal <- global_power_data %>%
+  filter(Variable == 'Coal') %>%
+  filter(Category != "Capacity") %>%
+  dplyr::select(-c(`YoY absolute change`, `YoY % change`, Category, Subcategory, Variable)) %>%
+  pivot_wider(names_from = Unit, values_from = Value) %>%
+  mutate(mtCO2_per_TWh = mtCO2/TWh,
+  mtCO2_per_TWh = ifelse(is.na(mtCO2_per_TWh), 0, mtCO2_per_TWh))
+```
+
+# Overview of Data
+
+```{r}
+skim(global_power_data)
+summary(global_power_data)
+```
+
+```{r}
+countries <- global_power_data %>% filter(`Area type`=="Country or economy") %>% dplyr::select(Area)
+unique(countries)
+```
+
+# Region Analysis
+
+```{r}
+global_coal %>%
+  filter(TWh != 0) %>%
+  filter(`Area type` == "Country or economy") %>%
+  ggplot(aes(x=Year, y=mtCO2_per_TWh)) +
+  geom_point(size=0.5) +
+  facet_wrap(~Continent) +
+  theme(
+    axis.text.x = element_text(
+      angle = 45,    
+      vjust = 1,
+      hjust = 1
+    )
+  ) +
+  labs(title="CO2 Intensity Variation Within Region Over Time")
+ggsave(
+  filename = here("outputs", "plots", "co2_intensity_variation_within_region_over_time.png"),
+  width = 6, 
+  height = 4, 
+  units = "in", 
+  dpi = 1500
+)
+```
+
+```{r}
+region_data <- global_coal %>%
+  filter(`Area type` == 'Region') %>%
+  filter(Area %in% c("Africa",
+                      "Asia",
+                      "Europe",
+                      "Latin America and Caribbean",
+                      "Middle East",
+                      "North America",
+                      "Oceania")) %>%
+  dplyr::select(-c(`ISO 3 code`, Continent, `Ember region`, EU, OECD, G20, G7, ASEAN)) %>%
+  mutate(percent_100 = `%` / 100)
+```
+
+```{r}
+table_1 <- region_data %>%
+  tbl_summary(by = Area,
+              include = c(`%`, TWh, mtCO2, mtCO2_per_TWh),
+              statistic = all_continuous() ~ "{mean} ({median})") %>%
+  as_gt()
+gtsave(data = table_1, filename = "summary_stats_table_by_region.png")
+
+table_2 <- region_data %>%
+  tbl_summary(by = Year,
+              include = c(`%`, TWh, mtCO2, mtCO2_per_TWh),
+              statistic = all_continuous() ~ "{mean} ({median})") %>%
+  as_gt()
+gtsave(
+  data = table_2, 
+  filename = here("outputs", "plots", "summary_stats_table_by_year.png")
+)
+```
+
+```{r}
+ggplot(region_data, aes(x=Year, y=mtCO2_per_TWh, color=Area)) +
+  geom_line() +
+  labs(title="CO2 Intensity Over Time by World Region",
+       y= "mtCO2 per TWh")
+
+ggsave(
+  filename = here("outputs", "plots", "co2_intensity_over_time_by_world_region.png"),
+  width = 6, 
+  height=4,
+  units = "in",
+  dpi = 1500
+)
+```
+
+## Summarizing Region Data
+
+```{r}
+skim(region_data)
+summary(region_data)
+```
+
+```{r}
+ggplot(region_data, aes(x=Area, y=mtCO2_per_TWh, color=Area)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 25, vjust = 1, hjust=1)) +
+  labs(x="",
+       title="Distribution of CO2 per TWh from Coal Power",
+       color = "Region",
+       y= "mtCO2 per TWh")
+ggsave(
+  filename = here("outputs", "plots", "distribution_of_co2_per_twh_from_coal_power.png"),
+  width = 7,
+  height=4,
+  units = "in",
+  dpi = 1500
+)
+
+```
+
+### Summary Stats by Region
+
+```{r}
+region_data %>%
+  group_by(Area) %>%
+  summarize(
+    N = n(),
+    Mean = mean(mtCO2_per_TWh),
+    Median = median(mtCO2_per_TWh),
+    SD = sd(mtCO2_per_TWh),
+    Min = min(mtCO2_per_TWh),
+    Max = max(mtCO2_per_TWh)
+  ) %>%
+  mutate(across(where(is.numeric), round, 3)) %>%
+  gt()
+```
+
+```{r}
+ggplot(region_data, aes(y=mtCO2_per_TWh)) +
+  geom_boxplot() +
+  theme(axis.text.x = element_text(angle = 30, vjust = 1, hjust=1)) +
+  labs(x="Region",
+       title="Distribution of CO2 per TWh from Coal Power--Separate Scales",
+       color = "Region",
+       y= "mtCO2 per TWh") +
+  facet_wrap(~ Area, nrow = 2, scales = "free_y")
+
+ggsave(
+  filename = here("outputs", "plots", "distribution_of_co2_per_twh_from_coal_power_separate_scales.png"),
+  width = 7,
+  height = 4,
+  units = "in",
+  dpi = 1500
+)
+```
+
+```{r}
+ggplot(region_data, aes(x=mtCO2_per_TWh, fill=Area)) +
+  geom_histogram() +
+  labs(title="Histogram of CO2 per TWh from Coal by Region",
+       fill="Region",
+       y="Count",
+       x="mtCO2 per TWh")
+ggsave(
+  filename = here("outputs", "plots", "histogram_of_co2_per_twh_from_coal_by_region.png"),
+  width = 7,
+  height = 4,
+  units = "in",
+  dpi = 1500
+)
+```
+
+# Testing the difference in CO2 Intensity between regions
+
+Null Hypothesis B: Coal power CO2 emission intensity does NOT vary between global regions.
+
+Alternative Hypothesis B: Coal power CO2 emission intensity DOES vary between global regions.
+
+```{r}
+shapiro.test(region_data$mtCO2_per_TWh)
+```
+
+A small p-value from our Shaprio-Wilks test tells use we should reject the null that our CO2_per_TWh data is normally distributed.
+
+```{r}
+levene.test(region_data$mtCO2_per_TWh, group=region_data$Area)
+```
+
+Small P-value for Brown-Forsythe means we reject the null of equal variance.
+
+```{r}
+kruskal.test(mtCO2_per_TWh ~ Area, data=region_data)
+```
+
+Because we don't have normally distributed data or equal variance I used the Kruskal-Wallis test (robust to both issues) and got a small p-value allowing us to reject the null that the distributions and medians are the same across global regions.
+
+```{r}
+pairwise.wilcox.test(region_data$mtCO2_per_TWh, g = region_data$Area)
+```
+
+All Pairs of regions are statically significantly different from each other.
+
+# Mapping the data (2024)
+
+```{r}
+only_2024 <- global_coal %>%
+  filter(Year == "2024") %>%
+  filter(`Area type` == "Country or economy") %>%
+  mutate(iso_3 = toupper(trimws(`ISO 3 code`))) %>%
+  mutate(log_intensity = log((mtCO2_per_TWh * 100)))
+```
+
+```{r}
+world_map <- ne_countries(scale = "medium", returnclass = "sf")
+
+map_data_2024 <- world_map %>%
+  left_join(only_2024, by = c("iso_a3" = "iso_3"))
+```
+
+```{r}
+ggplot(data = map_data_2024) +
+  geom_sf(aes(fill = log_intensity), 
+          color = "gray80", 
+          size = 0.1) +
+  scale_fill_viridis_c(
+    option = "viridis", 
+    direction = -1,    
+    name = "mtCO2 per TWh", 
+    na.value = "lightgray",
+    guide = guide_colorbar(
+      title.position = "top",
+      title.hjust = 0.5,
+      barwidth = 10,
+      barheight = 0.5,
+      direction = "horizontal")
+  ) +
+  theme_void() +
+  theme(
+    legend.position = "bottom",
+    legend.title = element_text(vjust = 0.5)) +
+  labs(
+    title = "Global Coal Carbon Intensity by Country (2024)") +
+  # No Antarctica
+  coord_sf(ylim = c(-55, 85))
+
+ggsave(
+  filename = here("outputs", "plots", "global_coal_carbon_intensity_by_country_2024.png"),
+  width = 6,
+  height = 4,
+  units = "in",
+  dpi = 1500
+)
+```
+
+# Modeling Intensity Over Time By Region
+
+```{r}
+intensity_time_region_model <- lm(formula = mtCO2_per_TWh ~ Year * Area, data=region_data)
+summary(intensity_time_region_model)
+shapiro.test(region_data$mtCO2_per_TWh)
+  
+  old_par <- par(no.readonly = TRUE)
+  diagnostic_plot_title = "Global Diagnostic Plot"
+  plot_file_name = paste0(diagnostic_plot_title, ".png")
+
+
+
+  png(filename = plot_file_name,
+    width = 1500,
+    height = 1000,
+    units = "px",
+    res = 150)
+  par(mfrow = c(2, 2), 
+    family = "serif",
+    oma = c(0, 0, 2, 0),
+    mar = c(5, 5, 2, 1))
+  plot(intensity_time_region_model, sub=" ")
+  mtext(text = diagnostic_plot_title,
+        outer = TRUE,
+        cex = 1.5,
+        font = 2,
+        line = 0,
+        adj = 0)
+  dev.off()
+  par(old_par)
+
+
+
+
+```
+
+```{r}
+vif(intensity_time_region_model)
+```
+
+```{r}
+ggplot(region_data, aes(x=Year, y=mtCO2_per_TWh, color=Area)) +
+  geom_point() +
+  geom_smooth(method="lm", se=FALSE) +
+  labs(title="Modeling CO2 per TWh Over Time by Region",
+       y= "mtCO2 per TWh")
+
+ggsave(
+  filename = here("outputs", "plots", "modeling_co2_per_twh_over_time_by_region.png"),
+  width = 7,
+  height = 4,
+  units = "in",
+  dpi = 1500
+)
+```
+
+```{r}
+region_model_maker_2 <- function(region) {
+  df <- region_data %>%
+  filter(Area == region)
+  old_par <- par(no.readonly = TRUE)
+  diagnostic_plot_title = paste(region, "Diagnostic Plot")
+  plot_file_name = paste0(diagnostic_plot_title, ".png")
+
+  model <- lm(formula = mtCO2_per_TWh ~ Year, data=df)
+  print(summary(model))
+  png(filename = plot_file_name,
+    width = 1500,
+    height = 1000,
+    units = "px",
+    res = 150)
+  par(mfrow = c(2, 2), 
+    family = "serif",
+    oma = c(0, 0, 2, 0),
+    mar = c(5, 5, 2, 1))
+  plot(model, sub=" ")
+  mtext(text = diagnostic_plot_title,
+        outer = TRUE,
+        cex = 1.5,
+        font = 2,
+        line = 0,
+        adj = 0)
+  dev.off()
+  par(old_par)
+  plot(ggplot(df, aes(x=Year, y=mtCO2_per_TWh)) + geom_point())
+  plot(ggplot(df, aes(x=mtCO2_per_TWh))) + geom_histogram()
+
+}
+```
+
+```{r}
+regions = c("Asia",
+            "Africa",
+            "Europe",
+            "Latin America and Caribbean",
+            "Middle East",
+            "Oceania",
+            "North America")
+for (i in regions){
+   df <- region_data %>%
+  filter(Area == i)
+   print(i)
+   print(shapiro.test(df$mtCO2_per_TWh))
+}
+
+```
+
+```{r}
+region_model_maker_2("Asia")
+```
+
+```{r}
+region_model_maker_2("Africa")
+```
+
+```{r}
+region_model_maker_2("Europe")
+```
+
+```{r}
+region_model_maker_2("Latin America and Caribbean")
+```
+
+```{r}
+region_model_maker_2("Middle East")
+```
+
+```{r}
+region_model_maker_2("Oceania")
+```
+
+```{r}
+region_model_maker_2("North America")
+```
+
+```{r}
+good_models_regions <- c("Europe",
+                         "Latin America and Caribbean",
+                         "Asia",
+                         "Oceania")
+good_models_data <- region_data %>%
+  filter(Area %in% good_models_regions)
+
+ggplot(good_models_data, aes(x=Year, y=mtCO2_per_TWh)) +
+  geom_point() + 
+  geom_smooth(method = "lm") +
+  labs(title="Models of Reasonable Fit",
+       y = "mtCO2 per TWh") +
+  facet_wrap(~Area, scales = "free_y") +
+  theme(plot.margin = unit(c(5, 10, 5, 5), "mm"))
+
+ggsave(
+  filename = here("outputs", "plots", "models_of_reasonable_fit.png"),
+  width = 7,
+  height = 4,
+  units = "in",
+  dpi = 1500
+)
+```
